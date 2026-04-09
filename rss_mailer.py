@@ -13,32 +13,28 @@ import argostranslate.package
 import argostranslate.translate
 
 
-# OPML（raw 链接）
-OPML_URL = "https://gist.github.com/emschwartz/e6d2bf860ccc367fe37ff953ba6de66b/raw/426957f043dc0054f95aae6c19de1d0b4ecc2bb2/hn-popular-blogs-2025.opml"
+OPML_PATH = "feeds.opml"
 
-# 每个 feed 的网络超时（秒）——避免卡住
 FEED_TIMEOUT_SECONDS = 15
-# 每个 feed 最多取前 N 条来检查（越大越慢）
 PER_FEED_LIMIT = 10
-# 只发送最近多少小时内的文章
 LOOKBACK_HOURS = 24
 
 
-def download_text(url: str, timeout: int = 60) -> str:
-    req = Request(url, headers={"User-Agent": "rss-mailer/1.0"})
-    with urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8", errors="replace")
+def escape_html(s: str) -> str:
+    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def load_feeds_from_opml_url(opml_url: str) -> list[str]:
-    content = download_text(opml_url, timeout=60).strip().strip("`").strip()
+def load_feeds_from_opml_file(opml_path: str) -> list[str]:
+    with open(opml_path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+
     root = ET.fromstring(content)
 
     urls: list[str] = []
     for node in root.findall(".//outline"):
         xml_url = node.attrib.get("xmlUrl")
         if xml_url:
-            urls.append(xml_url.strip().strip("`").strip())
+            urls.append(xml_url.strip())
 
     # 去重且保序
     seen = set()
@@ -112,18 +108,16 @@ def fetch_recent_items(feed_urls: list[str], since_utc: datetime, per_feed_limit
             if t and t < since_utc:
                 continue
 
-            items.append({
-                "feed": str(feed_title),
-                "title": e.get("title", "无标题"),
-                "link": e.get("link", ""),
-                "time": (t.isoformat() if t else ""),
-            })
+            items.append(
+                {
+                    "feed": str(feed_title),
+                    "title": e.get("title", "无标题"),
+                    "link": e.get("link", ""),
+                    "time": (t.isoformat() if t else ""),
+                }
+            )
 
     return items, failures
-
-
-def escape_html(s: str) -> str:
-    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def ensure_argos_en_zh_installed():
@@ -154,18 +148,28 @@ def ensure_argos_en_zh_installed():
     print("[INFO] 离线翻译模型安装完成")
 
 
+_translate_cache: dict[str, str] = {}
+
+
 def translate_en_to_zh(text: str) -> str:
     """
-    尝试把英文翻译成中文；失败则返回原文。
+    尝试把英文翻译成中文；失败则返回原文。（带缓存）
     """
     text = (text or "").strip()
     if not text:
         return text
+
+    if text in _translate_cache:
+        return _translate_cache[text]
+
     try:
         translator = argostranslate.translate.get_translation_from_codes("en", "zh")
-        return translator.translate(text)
+        zh = translator.translate(text)
     except Exception:
-        return text
+        zh = text
+
+    _translate_cache[text] = zh
+    return zh
 
 
 def zh_en_pair(s: str) -> str:
@@ -183,7 +187,6 @@ def zh_en_pair(s: str) -> str:
 
 
 def build_html(items, failures):
-    # 中英文对照
     ensure_argos_en_zh_installed()
 
     parts = []
@@ -254,9 +257,9 @@ def send_email(html_body: str):
 
 
 def main():
-    feeds = load_feeds_from_opml_url(OPML_URL)
+    feeds = load_feeds_from_opml_file(OPML_PATH)
     if not feeds:
-        raise RuntimeError("OPML 没有解析到任何 xmlUrl")
+        raise RuntimeError("feeds.opml 里没有任何 xmlUrl")
 
     since = datetime.now(timezone.utc) - timedelta(hours=LOOKBACK_HOURS)
     items, failures = fetch_recent_items(feeds, since_utc=since, per_feed_limit=PER_FEED_LIMIT)
