@@ -1,0 +1,28 @@
+name: RSS Mailer (Outlook)
+
+on:
+  schedule:
+    - cron: "0 1 * * *"  # UTC 01:00 = 北京时间 09:00
+  workflow_dispatch:
+
+jobs:
+  send-rss:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_SUBJECT: "每日 RSS 摘要"
+        run: python rss_mailer.py
