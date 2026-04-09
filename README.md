@@ -1,4 +1,4 @@
-# rss-to-email（GitHub Actions）
+# Rss-to-qq-email（GitHub Actions）
 
 定时从 OPML（RSS 订阅列表）抓取最近内容，并通过 SMTP 发送到邮箱。默认配置为：**每天北京时间 09:00** 运行一次。
 
